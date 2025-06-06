@@ -1,46 +1,45 @@
 import os
 import pandas as pd
+import xlsxwriter
 
-def combine_to_excel(destination):
-    base_dir = f'combined_csvs/{destination}'
+def combine_per_destination(destination, regions_root="data_mssql"):
     output_excel_path = f'combined_{destination}.xlsx'
 
-    # Get all region folders under the destination
-    if not os.path.exists(base_dir):
-        print(f"No directory found for destination: {destination}")
-        return
-
-    region_folders = [name for name in os.listdir(base_dir)
-                      if os.path.isdir(os.path.join(base_dir, name))]
-
-    if not region_folders:
-        print(f"No region folders found under {base_dir}")
-        return
-
     with pd.ExcelWriter(output_excel_path, engine='xlsxwriter') as writer:
-        for region in region_folders:
-            csv_path = os.path.join(base_dir, region, 'combined.csv')
-            if os.path.exists(csv_path):
+        for region in os.listdir(regions_root):
+            region_path = os.path.join(regions_root, region, destination)
+            if not os.path.isdir(region_path):
+                continue
+
+            # Gather all CSVs under that region/destination
+            csv_files = [f for f in os.listdir(region_path) if f.endswith(".csv")]
+            if not csv_files:
+                print(f"No CSV files in {region_path}")
+                continue
+
+            all_dfs = []
+            for csv_file in csv_files:
+                csv_path = os.path.join(region_path, csv_file)
                 try:
                     df = pd.read_csv(csv_path)
-                    sheet_name = f"{region}"[:31]  # Excel sheet name limit is 31 characters
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    all_dfs.append(df)
                 except Exception as e:
-                    print(f"Failed to write sheet for {region}: {e}")
+                    print(f"Failed reading {csv_path}: {e}")
+
+            if all_dfs:
+                combined_df = pd.concat(all_dfs, ignore_index=True)
+                sheet_name = region[:31]  # Excel sheet name limit
+                combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                print(f"✅ Written {destination} - {region} to sheet.")
             else:
-                print(f"No combined.csv found in {base_dir}/{region}")
+                print(f"No valid dataframes in {region_path}")
 
-    print(f"Combined Excel file created: {output_excel_path}")
+    print(f"📄 Created: {output_excel_path}")
 
-# Example usage:
 def main():
-    regions = {"us", "us2", "asia", "eu", "au","in"}
     destinations = ["redshift", "snowflake", "bigquery"]
-    for region in regions:
-        base_directories = []
-        for destination in destinations:
-            base_directories.append(f"data_mssql/{region}/{destination}")
-            combine_to_excel(base_directories)
+    for destination in destinations:
+        combine_per_destination(destination)
 
 if __name__ == "__main__":
     main()
